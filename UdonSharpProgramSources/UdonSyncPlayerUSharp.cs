@@ -1,4 +1,4 @@
-
+﻿
 using System;
 using UdonSharp;
 using UnityEngine;
@@ -46,10 +46,52 @@ public class UdonSyncPlayerUSharp : UdonSharpBehaviour
     
     public float syncFrequency = 15f;
     public bool allowGuestControl = true;
-    
+
+    public VRCUrl[] playLists;
+
+    [UdonSynced(UdonSyncMode.None), FieldChangeCallback(nameof(PlayListIndex))]
+    private int playListIndex = 0;
+    public int PlayListIndex
+    {
+        get => playListIndex;
+        set
+        {
+            if(0 <= value && value < playLists.Length)
+            {
+                playListIndex = value;
+            }
+        }
+    }
+
+    public int startDelaySecond = 5;
+    public int nextIntervalSecond = 0;
+    public bool autoStart = true;
+    public bool autoNext = true;
+    public bool autoLoop = true;
+
     void Start()
     {
-        // nop
+        if (Networking.IsOwner(this.gameObject))
+        {
+            if (0 < playLists.Length && autoStart)
+            {
+                SendCustomEventDelayedSeconds(nameof(SetUrl), startDelaySecond, EventTiming.Update);
+            }
+        }
+    }
+
+    public void SetUrl()
+    {
+        if (Networking.IsOwner(this.gameObject))
+        {
+            if(0 < playLists.Length)
+            {
+                SetProgramVariable(nameof(url), playLists[playListIndex]);
+
+                // 同期をリクエストする
+                RequestSerialization();
+            }
+        }
     }
 
     public void OnURLChanged()
@@ -76,7 +118,7 @@ public class UdonSyncPlayerUSharp : UdonSharpBehaviour
         SetProgramVariable(nameof(url), inputUrl);
         
         // 同期をリクエストする
-        RequestSerialization();        
+        RequestSerialization();
     }
 
     public override void OnVideoStart()
@@ -90,6 +132,28 @@ public class UdonSyncPlayerUSharp : UdonSharpBehaviour
     {
         return allowGuestControl;
         //return base.OnOwnershipRequest(requestingPlayer, requestedOwner);
+    }
+
+    public override void OnVideoEnd()
+    {
+        //base.OnVideoEnd();
+
+        if (Networking.IsOwner(this.gameObject))
+        {
+            if (0 < playLists.Length && autoNext)
+            {
+                if(playListIndex < playLists.Length - 1)
+                {
+                    playListIndex++;
+                }
+                else if(autoLoop)
+                {
+                    playListIndex = 0;
+                }
+
+                SendCustomEventDelayedSeconds(nameof(SetUrl), nextIntervalSecond, EventTiming.Update);
+            }
+        }
     }
 
     public void UpdateTimeAndOffset()
@@ -119,7 +183,7 @@ public class UdonSyncPlayerUSharp : UdonSharpBehaviour
         if (0 < syncFrequency)
         {
             SendCustomEventDelayedSeconds(nameof(UpdateTimeAndOffset), syncFrequency, EventTiming.Update);
-        }        
+        }
     }
 
     public void Resync()
@@ -134,6 +198,6 @@ public class UdonSyncPlayerUSharp : UdonSharpBehaviour
         var x = timeAndOffset.x;
         var y = timeAndOffset.y;
         var time = x + (single - y);
-        player.SetTime(time);        
+        player.SetTime(time);
     }
 }
